@@ -2,4 +2,4 @@
 
 ./build.sh
 sudo hciconfig hci0 down
-dist/test
+dist/paypal

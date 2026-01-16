@@ -6,14 +6,6 @@ import (
 	"github.com/paypal/gatt"
 )
 
-func MustBeUUID(s string) gatt.UUID {
-	if uuid, err := gatt.ParseUUID(s); err != nil {
-		panic(err)
-	} else {
-		return uuid
-	}
-}
-
 func main() {
 	opts := []gatt.Option{
 		gatt.LnxMaxConnections(1),
@@ -24,8 +16,8 @@ func main() {
 		log.Fatal(err)
 	}
 
-	service := gatt.NewService(MustBeUUID("82473ACA-A36D-4D49-AE1C-EB17F4C56218"))
-	cuuid := MustBeUUID("56A4FA7A-E1D2-4852-A4A0-2866DEC91905")
+	suuid := gatt.MustParseUUID("82473ACA-A36D-4D49-AE1C-EB17F4C56218")
+	cuuid := gatt.MustParseUUID("56A4FA7A-E1D2-4852-A4A0-2866DEC91905")
 
 	pch := make(chan gatt.Peripheral)
 	done := make(chan struct{})
@@ -33,9 +25,7 @@ func main() {
 	d.Handle(
 		gatt.PeripheralDiscovered(
 			func(p gatt.Peripheral, a *gatt.Advertisement, rssi int) {
-				//ch <- &scanned{p: p, a: a, rssi: rssi}
 				log.Printf("scanned: id=%s connectable=%t rssi=%d\n", p.ID(), a.Connectable, rssi)
-
 				if p.ID() == "44:1D:64:62:B3:1E" {
 					pch <- p
 				}
@@ -44,13 +34,29 @@ func main() {
 		gatt.PeripheralConnected(
 			func(p gatt.Peripheral, err error) {
 				log.Printf("connected: %s", p.ID())
-				c := gatt.NewCharacteristic(cuuid, service, gatt.Property(0), 0, 0)
-				if bs, err := p.ReadCharacteristic(c); err != nil {
-					log.Print(err)
+
+				if ss, err := p.DiscoverServices([]gatt.UUID{suuid}); err != nil {
+					log.Fatal(err)
 				} else {
-					log.Print(bs)
+					for _, s := range ss {
+						if s.UUID().Equal(suuid) {
+							log.Printf("discovered service: UUID=%s", s.UUID().String())
+							if cs, err := p.DiscoverCharacteristics([]gatt.UUID{cuuid}, s); err != nil {
+								log.Fatal(err)
+							} else {
+								for _, c := range cs {
+									log.Printf("discovered characteristic: UUID=%s", c.UUID().String())
+									if bs, err := p.ReadCharacteristic(c); err != nil {
+										log.Print(err)
+									} else {
+										log.Printf("len=%d, bs=%v", len(bs), bs)
+									}
+								}
+							}
+						}
+					}
 				}
-				done <- struct{}{}
+				close(done)
 			}))
 	d.Init(func(d gatt.Device, s gatt.State) {
 		switch s {
